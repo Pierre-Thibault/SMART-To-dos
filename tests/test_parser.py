@@ -9,6 +9,8 @@ import pytest
 
 from app.parser import (
     Node,
+    ParseError,
+    ParseResult,
     SmartCriteria,
     TimeEntry,
     TrackingConfig,
@@ -108,17 +110,26 @@ class TestCleanDepends:
 
 class TestCleanPriority:
     def test_none(self) -> None:
-        assert _clean_priority(None) is None
+        errors: list[ParseError] = []
+        assert _clean_priority(None, errors) is None
+        assert len(errors) == 0
 
     def test_valid(self) -> None:
-        assert _clean_priority("high") == "high"
+        errors: list[ParseError] = []
+        assert _clean_priority("high", errors) == "high"
+        assert len(errors) == 0
 
     def test_invalid(self) -> None:
-        assert _clean_priority("urgent") is None
+        errors: list[ParseError] = []
+        assert _clean_priority("urgent", errors) is None
+        assert len(errors) == 1
+        assert "urgent" in errors[0].message
 
     def test_all_valid_values(self) -> None:
         for p in ("optional", "low", "medium", "high", "capital"):
-            assert _clean_priority(p) == p
+            errors: list[ParseError] = []
+            assert _clean_priority(p, errors) == p
+            assert len(errors) == 0
 
 
 # ── _clean_status ────────────────────────────────────────────────────────
@@ -126,17 +137,26 @@ class TestCleanPriority:
 
 class TestCleanStatus:
     def test_none(self) -> None:
-        assert _clean_status(None) == "not_started"
+        errors: list[ParseError] = []
+        assert _clean_status(None, errors) == "not_started"
+        assert len(errors) == 0
 
     def test_valid(self) -> None:
-        assert _clean_status("done") == "done"
+        errors: list[ParseError] = []
+        assert _clean_status("done", errors) == "done"
+        assert len(errors) == 0
 
     def test_invalid(self) -> None:
-        assert _clean_status("unknown") == "not_started"
+        errors: list[ParseError] = []
+        assert _clean_status("unknown", errors) == "not_started"
+        assert len(errors) == 1
+        assert "unknown" in errors[0].message
 
     def test_all_valid_values(self) -> None:
         for s in ("not_started", "in_progress", "done", "paused", "cancelled"):
-            assert _clean_status(s) == s
+            errors: list[ParseError] = []
+            assert _clean_status(s, errors) == s
+            assert len(errors) == 0
 
 
 # ── _parse_tracking ──────────────────────────────────────────────────────
@@ -230,27 +250,45 @@ class TestParseSmart:
 
 class TestParseMetadata:
     def test_empty_body(self) -> None:
-        assert _parse_metadata("") == {}
+        errors: list[ParseError] = []
+        assert _parse_metadata("", errors) == {}
+        assert len(errors) == 0
 
     def test_yaml_list(self) -> None:
+        errors: list[ParseError] = []
         body = "- status: done\n- priority: high\n"
-        meta = _parse_metadata(body)
+        meta = _parse_metadata(body, errors)
         assert meta["status"] == "done"
         assert meta["priority"] == "high"
+        assert len(errors) == 0
 
     def test_free_text_stops_parsing(self) -> None:
+        errors: list[ParseError] = []
         body = "- status: done\n\nSome free text here."
-        meta = _parse_metadata(body)
+        meta = _parse_metadata(body, errors)
         assert meta["status"] == "done"
+        assert len(errors) == 0
 
     def test_yaml_continuation_after_blank(self) -> None:
+        errors: list[ParseError] = []
         body = "- tracking:\n    target: 84 pages\n\n- status: done\n"
-        meta = _parse_metadata(body)
+        meta = _parse_metadata(body, errors)
         assert "tracking" in meta
+        assert len(errors) == 0
 
     def test_non_yaml_body(self) -> None:
+        errors: list[ParseError] = []
         body = "Just plain text, no YAML here."
-        assert _parse_metadata(body) == {}
+        assert _parse_metadata(body, errors) == {}
+        assert len(errors) == 0
+
+    def test_invalid_yaml_reports_error(self) -> None:
+        errors: list[ParseError] = []
+        body = "- status: done\n- invalid: [unclosed"
+        meta = _parse_metadata(body, errors)
+        assert meta == {}
+        assert len(errors) == 1
+        assert errors[0].level.value == "error"
 
 
 # ── _parse_time_entries ──────────────────────────────────────────────────
@@ -264,11 +302,12 @@ class TestParseTimeEntries:
             "| 2026-02-15 | task-01   | 70 minutes |       |\n"
             "| 2026-02-16 | task-02   | 17 pages   | Ch. 1 |\n"
         )
-        entries = _parse_time_entries(text)
+        entries, errors = _parse_time_entries(text)
         assert len(entries) == 2
         assert entries[0].node_id == "task-01"
         assert entries[0].quantity == 70.0
         assert entries[1].notes == "Ch. 1"
+        assert len(errors) == 0
 
     def test_header_row_skipped(self) -> None:
         text = (
@@ -276,22 +315,27 @@ class TestParseTimeEntries:
             "|------|-------|--------|-------|\n"
             "| 2026-01-01 | x | 10 pages | |\n"
         )
-        entries = _parse_time_entries(text)
+        entries, errors = _parse_time_entries(text)
         assert len(entries) == 1
+        assert len(errors) == 0
 
     def test_invalid_date_skipped(self) -> None:
         text = "| bad-date | x | 10 pages | |\n"
-        entries = _parse_time_entries(text)
+        entries, errors = _parse_time_entries(text)
         assert len(entries) == 0
+        assert len(errors) == 1
+        assert "bad-date" in errors[0].message
 
     def test_invalid_quantity_skipped(self) -> None:
         text = "| 2026-01-01 | x | abc | |\n"
-        entries = _parse_time_entries(text)
+        entries, errors = _parse_time_entries(text)
         assert len(entries) == 0
+        assert len(errors) == 1
+        assert "abc" in errors[0].message
 
     def test_too_few_columns_skipped(self) -> None:
         text = "| 2026-01-01 | x |\n"
-        entries = _parse_time_entries(text)
+        entries, errors = _parse_time_entries(text)
         assert len(entries) == 0
 
     # ── Short format (leaf-level journal) ────────────────────────────
@@ -304,11 +348,12 @@ class TestParseTimeEntries:
             "| 2026-02-15 | 20 pages   |       |\n"
             "| 2026-02-16 | 15 pages   | Ch. 2 |\n"
         )
-        entries = _parse_time_entries(text, default_node_id="leaf-01")
+        entries, errors = _parse_time_entries(text, default_node_id="leaf-01")
         assert len(entries) == 2
         assert entries[0].node_id == "leaf-01"
         assert entries[0].quantity == 20.0
         assert entries[1].notes == "Ch. 2"
+        assert len(errors) == 0
 
     def test_short_format_two_columns(self) -> None:
         """Minimal leaf journal: | Date | Valeur |."""
@@ -317,19 +362,21 @@ class TestParseTimeEntries:
             "|------------|------------|\n"
             "| 2026-01-10 | 30 minutes |\n"
         )
-        entries = _parse_time_entries(text, default_node_id="run")
+        entries, errors = _parse_time_entries(text, default_node_id="run")
         assert len(entries) == 1
         assert entries[0].node_id == "run"
         assert entries[0].quantity == 30.0
         assert entries[0].notes == ""
+        assert len(errors) == 0
 
     def test_short_format_no_header(self) -> None:
         """Auto-detect short format from column count + default_node_id."""
         text = "| 2026-03-01 | 5 km | Morning run |\n"
-        entries = _parse_time_entries(text, default_node_id="jog")
+        entries, errors = _parse_time_entries(text, default_node_id="jog")
         assert len(entries) == 1
         assert entries[0].node_id == "jog"
         assert entries[0].quantity == 5.0
+        assert len(errors) == 0
 
     def test_short_format_invalid_date_skipped(self) -> None:
         text = (
@@ -337,8 +384,9 @@ class TestParseTimeEntries:
             "|------------|--------|\n"
             "| not-a-date | 10     |\n"
         )
-        entries = _parse_time_entries(text, default_node_id="x")
+        entries, errors = _parse_time_entries(text, default_node_id="x")
         assert len(entries) == 0
+        assert len(errors) == 1
 
     def test_short_format_invalid_quantity_skipped(self) -> None:
         text = (
@@ -346,14 +394,15 @@ class TestParseTimeEntries:
             "|------------|--------|\n"
             "| 2026-01-01 | abc    |\n"
         )
-        entries = _parse_time_entries(text, default_node_id="x")
+        entries, errors = _parse_time_entries(text, default_node_id="x")
         assert len(entries) == 0
+        assert len(errors) == 1
 
     def test_short_format_too_few_columns(self) -> None:
         text = (
             "| Date       | Valeur |\n" "|------------|--------|\n" "| 2026-01-01 |\n"
         )
-        entries = _parse_time_entries(text, default_node_id="x")
+        entries, errors = _parse_time_entries(text, default_node_id="x")
         assert len(entries) == 0
 
     def test_full_format_with_empty_task_uses_default(self) -> None:
@@ -363,9 +412,10 @@ class TestParseTimeEntries:
             "|------------|-------|----------|-------|\n"
             "| 2026-01-01 |       | 10 pages |       |\n"
         )
-        entries = _parse_time_entries(text, default_node_id="fallback")
+        entries, errors = _parse_time_entries(text, default_node_id="fallback")
         assert len(entries) == 1
         assert entries[0].node_id == "fallback"
+        assert len(errors) == 0
 
     def test_english_header_detected(self) -> None:
         """Header with 'Task' and 'Value' (English) is detected as full."""
@@ -374,9 +424,10 @@ class TestParseTimeEntries:
             "|------------|--------|----------|-------|\n"
             "| 2026-01-01 | abc    | 5 pages  |       |\n"
         )
-        entries = _parse_time_entries(text)
+        entries, errors = _parse_time_entries(text)
         assert len(entries) == 1
         assert entries[0].node_id == "abc"
+        assert len(errors) == 0
 
     def test_english_short_header_detected(self) -> None:
         """Header with 'Value' but no 'Task' → short format."""
@@ -385,16 +436,18 @@ class TestParseTimeEntries:
             "|------------|--------|-------|\n"
             "| 2026-01-01 | 5 km   |       |\n"
         )
-        entries = _parse_time_entries(text, default_node_id="run")
+        entries, errors = _parse_time_entries(text, default_node_id="run")
         assert len(entries) == 1
         assert entries[0].node_id == "run"
+        assert len(errors) == 0
 
     def test_no_default_no_header_uses_full(self) -> None:
         """Without default_node_id and no header, 3+ cols → full format."""
         text = "| 2026-01-01 | task-x | 10 pages | |\n"
-        entries = _parse_time_entries(text)
+        entries, errors = _parse_time_entries(text)
         assert len(entries) == 1
         assert entries[0].node_id == "task-x"
+        assert len(errors) == 0
 
 
 # ── _split_into_sections ─────────────────────────────────────────────────
@@ -487,29 +540,45 @@ class TestPropagatePriority:
 
 class TestBuildNode:
     def test_basic(self) -> None:
+        errors: list[ParseError] = []
         sec = _Section(
             level=2, raw_heading="t : Title", node_id="t", title="Title", body=""
         )
-        node = _build_node(sec, {"status": "in_progress", "priority": "high"})
+        node = _build_node(sec, {"status": "in_progress", "priority": "high"}, errors)
         assert node.node_id == "t"
         assert node.status == "in_progress"
         assert node.priority == "high"
+        assert len(errors) == 0
 
     def test_fixed_end(self) -> None:
+        errors: list[ParseError] = []
         sec = _Section(level=3, raw_heading="x : X", node_id="x", title="X", body="")
-        node = _build_node(sec, {"start": "2026-01-01", "end": "2026-04-01!"})
+        node = _build_node(sec, {"start": "2026-01-01", "end": "2026-04-01!"}, errors)
         assert node.fixed_end is True
         assert node.end == date(2026, 4, 1)
+        assert len(errors) == 0
 
     def test_tags(self) -> None:
+        errors: list[ParseError] = []
         sec = _Section(level=2, raw_heading="x : X", node_id="x", title="X", body="")
-        node = _build_node(sec, {"tags": ["pro", "learning"]})
+        node = _build_node(sec, {"tags": ["pro", "learning"]}, errors)
         assert node.tags == ["pro", "learning"]
+        assert len(errors) == 0
 
     def test_tags_non_list(self) -> None:
+        errors: list[ParseError] = []
         sec = _Section(level=2, raw_heading="x : X", node_id="x", title="X", body="")
-        node = _build_node(sec, {"tags": "not-a-list"})
+        node = _build_node(sec, {"tags": "not-a-list"}, errors)
         assert node.tags == []
+        assert len(errors) == 0
+
+    def test_invalid_type_reports_warning(self) -> None:
+        errors: list[ParseError] = []
+        sec = _Section(level=2, raw_heading="x : X", node_id="x", title="X", body="")
+        node = _build_node(sec, {"type": "invalid"}, errors)
+        assert node.node_type == "bounded"
+        assert len(errors) == 1
+        assert "invalid" in errors[0].message
 
 
 # ── parse_goals_file (integration) ───────────────────────────────────────
@@ -531,12 +600,14 @@ class TestParseGoalsFile:
         - tracking:
             target: 100 pages
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         assert len(goals) == 1
         assert goals[0].node_id == "a"
         assert goals[0].priority == "high"
         assert len(goals[0].children) == 1
         assert goals[0].children[0].priority == "high"  # inherited
+        assert len(result.errors) == 0
 
     def test_journal_parsed(self, tmp_md) -> None:
         p = tmp_md("""
@@ -555,19 +626,22 @@ class TestParseGoalsFile:
         |------------|-------|----------|-------|
         | 2026-01-10 | t     | 20 pages |       |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         assert len(goals[0].time_entries) == 1
         assert goals[0].time_entries[0].quantity == 20.0
 
     def test_no_frontmatter(self, tmp_md) -> None:
         p = tmp_md("## x : Hello\n\n- status: done\n")
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         assert len(goals) == 1
         assert goals[0].status == "done"
 
     def test_open_type(self, tmp_md) -> None:
         p = tmp_md("## o : Open goal\n\n- type: open\n")
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         assert goals[0].node_type == "open"
 
     def test_heading_without_id_skipped(self, tmp_md) -> None:
@@ -582,7 +656,8 @@ class TestParseGoalsFile:
 
         ## b : Another goal
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         assert [g.node_id for g in goals] == ["a", "b"]
 
     def test_deep_nesting(self, tmp_md) -> None:
@@ -596,7 +671,8 @@ class TestParseGoalsFile:
         - tracking:
             target: 10 pages
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         assert len(goals) == 1
         assert len(goals[0].children) == 1
         assert len(goals[0].children[0].children) == 1
@@ -613,7 +689,8 @@ class TestParseGoalsFile:
 
         - priority: low
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         assert len(goals) == 2
         assert goals[0].priority == "high"
         assert goals[1].priority == "low"
@@ -635,7 +712,8 @@ class TestParseGoalsFile:
         | 2026-01-10 | 20 pages |       |
         | 2026-01-15 | 30 pages | Ch. 2 |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         entries = goals[0].time_entries
         assert len(entries) == 2
         assert entries[0].node_id == "t"
@@ -661,7 +739,8 @@ class TestParseGoalsFile:
         | 2026-01-10 | 12 minutes |
         | 2026-01-13 | 15 minutes |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         entries = goals[0].time_entries
         assert len(entries) == 2
         assert all(e.node_id == "run" for e in entries)
@@ -694,7 +773,8 @@ class TestParseGoalsFile:
         |------------|-------|----------|-------|
         | 2026-01-12 | b     | 20 pages |       |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         entries = goals[0].time_entries
         assert len(entries) == 2
         a_entries = [e for e in entries if e.node_id == "a"]
@@ -716,7 +796,8 @@ class TestParseGoalsFile:
 
         | 2026-02-01 | 25 pages | Half done |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         entries = goals[0].time_entries
         assert len(entries) == 1
         assert entries[0].node_id == "t"
@@ -747,7 +828,8 @@ class TestParseGoalsFile:
         | 2026-01-10 | child-a | 10 pages |       |
         | 2026-01-15 | child-b | 5 pages  |       |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         entries = goals[0].time_entries
         assert len(entries) == 2
         assert entries[0].node_id == "child-a"
@@ -773,13 +855,14 @@ class TestParseGoalsFile:
         |------------|-------|----------|-------|
         | 2026-01-10 | gc    | 20 pages |       |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         entries = goals[0].time_entries
         assert len(entries) == 1
         assert entries[0].node_id == "gc"
 
-    def test_journal_unknown_id_dropped(self, tmp_md) -> None:
-        """Entries referencing unknown ids are silently dropped."""
+    def test_journal_unknown_id_generates_warning(self, tmp_md) -> None:
+        """Entries referencing unknown ids generate a warning."""
         p = tmp_md("""
         ## g : Goal
 
@@ -795,13 +878,17 @@ class TestParseGoalsFile:
         | 2026-01-10 | a       | 10 pages |       |
         | 2026-01-11 | unknown | 5 pages  |       |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         entries = goals[0].time_entries
         assert len(entries) == 1
         assert entries[0].node_id == "a"
+        # Should have a warning about unknown id
+        assert len(result.errors) == 1
+        assert "unknown" in result.errors[0].message
 
     def test_journal_id_must_be_defined_before(self, tmp_md) -> None:
-        """Journal before its target node → entry is dropped."""
+        """Journal before its target node → entry is dropped with warning."""
         p = tmp_md("""
         ## g : Goal
 
@@ -816,9 +903,11 @@ class TestParseGoalsFile:
         - tracking:
             target: 50 pages
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         entries = goals[0].time_entries
         assert len(entries) == 0
+        assert len(result.errors) == 1
 
     def test_journal_non_leaf_short_format_ignored(self, tmp_md) -> None:
         """Short format under a non-leaf yields no default_node_id."""
@@ -841,7 +930,8 @@ class TestParseGoalsFile:
         |------------|----------|-------|
         | 2026-01-10 | 10 pages |       |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         # Short format without default → entries have empty node_id
         # which is not in known_ids → dropped
         entries = goals[0].time_entries
@@ -862,7 +952,8 @@ class TestParseGoalsFile:
         |------------|------------|
         | 2026-01-10 | 12 minutes |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         entries = goals[0].time_entries
         assert len(entries) == 1
         assert entries[0].node_id == "run"
@@ -901,9 +992,42 @@ class TestParseGoalsFile:
         | 2026-01-10 | a     | 15 pages |       |
         | 2026-01-11 | b     | 25 pages |       |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         entries = goals[0].time_entries
         a_entries = [e for e in entries if e.node_id == "a"]
         b_entries = [e for e in entries if e.node_id == "b"]
         assert len(a_entries) == 2  # leaf + goal-level
         assert len(b_entries) == 2  # leaf + goal-level
+
+    def test_file_not_found(self, tmp_path) -> None:
+        """Missing file returns an error."""
+        p = tmp_path / "nonexistent.md"
+        result = parse_goals_file(p)
+        assert len(result.goals) == 0
+        assert result.has_errors
+        assert "not found" in result.errors[0].message.lower()
+
+    def test_invalid_yaml_reports_error(self, tmp_md) -> None:
+        """Invalid YAML syntax is reported."""
+        p = tmp_md("""
+        ## g : Goal
+
+        - status: [unclosed
+        """)
+        result = parse_goals_file(p)
+        assert result.has_errors
+        assert any("YAML" in e.message for e in result.errors)
+
+    def test_invalid_status_reports_warning(self, tmp_md) -> None:
+        """Invalid status value generates a warning."""
+        p = tmp_md("""
+        ## g : Goal
+
+        - status: invalid_status
+        """)
+        result = parse_goals_file(p)
+        assert len(result.goals) == 1
+        assert result.goals[0].status == "not_started"
+        assert result.has_warnings
+        assert any("invalid_status" in e.message for e in result.errors)

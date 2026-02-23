@@ -16,6 +16,7 @@ from app.analytics import (
 )
 from app.parser import (
     Node,
+    ParseError,
     SmartCriteria,
     TimeEntry,
     TrackingConfig,
@@ -29,15 +30,18 @@ from app.parser import (
 class TestParseMetadataEdgeCases:
     def test_string_item_with_colon(self) -> None:
         """YAML list containing a bare 'key: value' string."""
+        errors: list[ParseError] = []
         body = '- "status: done"\n'
-        meta = _parse_metadata(body)
+        meta = _parse_metadata(body, errors)
         assert meta.get("status") == "done"
 
     def test_yaml_error(self) -> None:
-        """Malformed YAML gracefully returns empty dict."""
+        """Malformed YAML gracefully returns empty dict with error."""
+        errors: list[ParseError] = []
         body = "- [invalid: yaml: : :\n"
-        meta = _parse_metadata(body)
+        meta = _parse_metadata(body, errors)
         assert meta == {}
+        assert len(errors) == 1
 
 
 class TestParseGoalsFileEdgeCases:
@@ -52,7 +56,8 @@ class TestParseGoalsFileEdgeCases:
         |------------|-------|----------|-------|
         | 2026-01-10 | g     | 20 pages |       |
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         assert len(goals) == 1
         assert len(goals[0].time_entries) == 1
 
@@ -70,7 +75,8 @@ class TestParseGoalsFileEdgeCases:
         - tracking:
             target: 10 pages
         """)
-        goals = parse_goals_file(p)
+        result = parse_goals_file(p)
+        goals = result.goals
         assert len(goals[0].children) == 1
         assert goals[0].children[0].node_id == "c"
 

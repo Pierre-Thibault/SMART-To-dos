@@ -63,6 +63,8 @@ function applyStaticI18n() {
 
 let goalsData = null;
 let ganttData = null;
+let parseErrors = [];
+let errorsExpanded = true;
 
 // ── Tabs ────────────────────────────────────────────────────────────────
 
@@ -92,8 +94,24 @@ async function fetchData() {
         const [gr, gnr] = await Promise.all([fetch('/api/goals'), fetch('/api/gantt')]);
         goalsData = await gr.json();
         ganttData = await gnr.json();
+
+        // Collect parsing errors from both responses
+        parseErrors = [];
+        if (goalsData.errors && goalsData.errors.length > 0) {
+            parseErrors = goalsData.errors;
+        }
+
         document.getElementById('header-meta').textContent =
             t.headerMeta(goalsData.goals.length, goalsData.as_of);
+
+        // Check for fatal errors (ERROR level that prevented parsing)
+        const fatalErrors = parseErrors.filter(e => e.level === 'error');
+        if (fatalErrors.length > 0 && goalsData.goals.length === 0) {
+            renderFatalErrors(fatalErrors);
+            return;
+        }
+
+        renderErrorBanner();
         renderFilterBar();
         renderOverview();
         renderGantt();
@@ -102,6 +120,82 @@ async function fetchData() {
         document.getElementById('view-overview').innerHTML =
             `<div class="loading">${t.loadError}</div>`;
     }
+}
+
+// ── Error rendering ─────────────────────────────────────────────────────
+
+function renderFatalErrors(errors) {
+    const html = `
+        <div class="error-panel error-fatal">
+            <div class="error-header">
+                <span class="error-icon">✕</span>
+                <h2>${t.parsingErrors}</h2>
+            </div>
+            <p class="error-desc">${t.parsingErrorsDesc}</p>
+            <div class="error-list">
+                ${errors.map(e => renderErrorItem(e)).join('')}
+            </div>
+        </div>`;
+
+    document.getElementById('view-overview').innerHTML = html;
+    document.getElementById('view-gantt').innerHTML = `<div class="loading">${t.noData}</div>`;
+    document.getElementById('view-predictions').innerHTML = `<div class="loading">${t.noData}</div>`;
+}
+
+function renderErrorBanner() {
+    const container = document.getElementById('error-banner');
+    if (!container) return;
+
+    if (parseErrors.length === 0) {
+        container.innerHTML = '';
+        container.style.display = 'none';
+        return;
+    }
+
+    const errorCount = parseErrors.filter(e => e.level === 'error').length;
+    const warningCount = parseErrors.filter(e => e.level === 'warning').length;
+
+    container.style.display = 'block';
+    container.innerHTML = `
+        <div class="error-banner ${errorCount > 0 ? 'has-errors' : 'warnings-only'}">
+            <div class="error-banner-header" onclick="toggleErrorDetails()">
+                <div class="error-banner-summary">
+                    <span class="error-icon">${errorCount > 0 ? '⚠' : '⚡'}</span>
+                    <span class="error-count">${t.errorsCount(parseErrors.length)}</span>
+                    ${errorCount > 0 ? `<span class="badge error-badge">${errorCount} ${t.errorLevelError.toLowerCase()}</span>` : ''}
+                    ${warningCount > 0 ? `<span class="badge warning-badge">${warningCount} ${t.errorLevelWarning.toLowerCase()}</span>` : ''}
+                </div>
+                <button class="error-toggle-btn">${errorsExpanded ? t.hideErrors : t.showErrors}</button>
+            </div>
+            <div class="error-banner-details ${errorsExpanded ? 'expanded' : ''}">
+                <p class="error-desc">${t.parsingErrorsDesc}</p>
+                <div class="error-list">
+                    ${parseErrors.map(e => renderErrorItem(e)).join('')}
+                </div>
+            </div>
+        </div>`;
+}
+
+function toggleErrorDetails() {
+    errorsExpanded = !errorsExpanded;
+    renderErrorBanner();
+}
+
+function renderErrorItem(e) {
+    const levelClass = e.level === 'error' ? 'level-error' : 'level-warning';
+    const levelLabel = e.level === 'error' ? t.errorLevelError : t.errorLevelWarning;
+    const lineInfo = e.line ? `<span class="error-line">${t.errorLine} ${e.line}</span>` : '';
+    const contextInfo = e.context ? `<span class="error-context">${t.errorContext}: <code>${e.context}</code></span>` : '';
+
+    return `
+        <div class="error-item ${levelClass}">
+            <span class="error-level-badge">${levelLabel}</span>
+            <span class="error-message">${escHtml(e.message)}</span>
+            <div class="error-meta">
+                ${lineInfo}
+                ${contextInfo}
+            </div>
+        </div>`;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────

@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .analytics import NodeProgress, analyze_goal
-from .parser import Node, parse_goals_file
+from .parser import Node, ParseError, ParseResult, parse_goals_file
 
 # ── Preferences ──────────────────────────────────────────────────────────
 
@@ -51,15 +51,13 @@ if STATIC_DIR.exists():
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
-def _load_goals() -> list[Node]:
-    """Parse the goals file and return top-level nodes.
+def _load_goals() -> tuple[list[Node], list[ParseError]]:
+    """Parse the goals file and return top-level nodes with any errors.
 
-    :returns: Ordered list of :class:`~app.parser.Node`, or an empty
-        list when the file does not exist.
+    :returns: Tuple of (nodes, errors). Nodes may be empty on fatal errors.
     """
-    if GOALS_FILE.exists():
-        return parse_goals_file(GOALS_FILE)
-    return []
+    result: ParseResult = parse_goals_file(GOALS_FILE)
+    return result.goals, result.errors
 
 
 def _node_to_dict(node: NodeProgress) -> dict[str, Any]:
@@ -115,12 +113,15 @@ def _node_to_dict(node: NodeProgress) -> dict[str, Any]:
 async def get_goals() -> dict[str, Any]:
     """Return all goals with their full analysis tree.
 
-    :returns: ``{"goals": [...], "as_of": "YYYY-MM-DD"}``.
+    :returns: ``{"goals": [...], "errors": [...], "as_of": "YYYY-MM-DD"}``.
     """
-    goals: list[Node] = _load_goals()
+    goals: list[Node]
+    errors: list[ParseError]
+    goals, errors = _load_goals()
     today: date = date.today()
     return {
         "goals": [_node_to_dict(analyze_goal(g, today)) for g in goals],
+        "errors": [e.to_dict() for e in errors],
         "as_of": today.isoformat(),
     }
 
@@ -132,12 +133,16 @@ async def get_goal(goal_id: str) -> dict[str, Any]:
     :param goal_id: The :pyattr:`~app.parser.Node.node_id` to look up.
     :returns: Serialised goal dict, or ``{"error": "Goal not found"}``.
     """
-    goals: list[Node] = _load_goals()
+    goals: list[Node]
+    errors: list[ParseError]
+    goals, errors = _load_goals()
     today: date = date.today()
     for goal in goals:
         if goal.node_id == goal_id:
-            return _node_to_dict(analyze_goal(goal, today))
-    return {"error": "Goal not found"}
+            result = _node_to_dict(analyze_goal(goal, today))
+            result["errors"] = [e.to_dict() for e in errors]
+            return result
+    return {"error": "Goal not found", "errors": [e.to_dict() for e in errors]}
 
 
 # ── Gantt helpers ────────────────────────────────────────────────────────
@@ -198,9 +203,11 @@ def _flatten_for_gantt(
 async def get_gantt_data() -> dict[str, Any]:
     """Return a flat list of Gantt tasks for every goal.
 
-    :returns: ``{"tasks": [...], "as_of": "YYYY-MM-DD"}``.
+    :returns: ``{"tasks": [...], "errors": [...], "as_of": "YYYY-MM-DD"}``.
     """
-    goals: list[Node] = _load_goals()
+    goals: list[Node]
+    errors: list[ParseError]
+    goals, errors = _load_goals()
     today: date = date.today()
     tasks: list[dict[str, Any]] = []
 
@@ -214,7 +221,11 @@ async def get_gantt_data() -> dict[str, Any]:
             _flatten_for_gantt(progress, None, goal_start, goal_end),
         )
 
-    return {"tasks": tasks, "as_of": today.isoformat()}
+    return {
+        "tasks": tasks,
+        "errors": [e.to_dict() for e in errors],
+        "as_of": today.isoformat(),
+    }
 
 
 # ── Dashboard ────────────────────────────────────────────────────────────

@@ -10,6 +10,17 @@ const LOCALE_FR = {
     noData: "Aucune donnée.",
     loading: "Chargement...",
 
+    // Parsing errors
+    parsingErrors: "Erreurs d'analyse",
+    parsingErrorsDesc: "Les problèmes suivants ont été détectés lors de l'analyse du fichier. Veuillez les corriger pour assurer un fonctionnement correct.",
+    errorLine: "Ligne",
+    errorContext: "Contexte",
+    errorLevelError: "Erreur",
+    errorLevelWarning: "Avertissement",
+    errorsCount: (n) => `${n} problème${n > 1 ? 's' : ''} trouvé${n > 1 ? 's' : ''}`,
+    showErrors: "Afficher les détails",
+    hideErrors: "Masquer les détails",
+
     // Statuses
     status_done: "Terminé",
     status_in_progress: "En cours",

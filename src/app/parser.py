@@ -19,10 +19,65 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
 import yaml
+
+
+class ParseErrorLevel(Enum):
+    """Severity level for parsing errors."""
+
+    WARNING = "warning"
+    ERROR = "error"
+
+
+@dataclass
+class ParseError:
+    """A parsing error or warning collected during file analysis.
+
+    :param level: Severity level (warning or error).
+    :param message: Human-readable error description.
+    :param line: Line number in the source file (1-indexed), if known.
+    :param context: Additional context (e.g. node id, field name).
+    """
+
+    level: ParseErrorLevel
+    message: str
+    line: Optional[int] = None
+    context: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-ready dictionary."""
+        return {
+            "level": self.level.value,
+            "message": self.message,
+            "line": self.line,
+            "context": self.context,
+        }
+
+
+@dataclass
+class ParseResult:
+    """Result of parsing a goals file.
+
+    :param goals: List of parsed goal nodes.
+    :param errors: List of errors and warnings encountered.
+    """
+
+    goals: list[Node]
+    errors: list[ParseError]
+
+    @property
+    def has_errors(self) -> bool:
+        """Return True if there are any ERROR-level issues."""
+        return any(e.level == ParseErrorLevel.ERROR for e in self.errors)
+
+    @property
+    def has_warnings(self) -> bool:
+        """Return True if there are any WARNING-level issues."""
+        return any(e.level == ParseErrorLevel.WARNING for e in self.errors)
 
 VALID_PRIORITIES: tuple[str, ...] = (
     "optional",
@@ -195,10 +250,20 @@ def _extract_value_unit(text: Any) -> tuple[Optional[float], str]:
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
-def _parse_date(val: Any) -> Optional[date]:
+def _parse_date(
+    val: Any,
+    errors: Optional[list[ParseError]] = None,
+    field_name: str = "",
+    node_id: str = "",
+    line: Optional[int] = None,
+) -> Optional[date]:
     """Parse a ``YYYY-MM-DD`` string (or pass through a :class:`date`).
 
     :param val: Raw value from YAML metadata.
+    :param errors: List to append parsing errors to.
+    :param field_name: Field name for error context.
+    :param node_id: Node identifier for error context.
+    :param line: Line number for error reporting.
     :returns: A :class:`date` or ``None`` on failure.
     """
     if val is None:
@@ -208,6 +273,15 @@ def _parse_date(val: Any) -> Optional[date]:
     try:
         return datetime.strptime(str(val), "%Y-%m-%d").date()
     except (ValueError, TypeError):
+        if errors is not None and val:
+            errors.append(
+                ParseError(
+                    level=ParseErrorLevel.WARNING,
+                    message=f"Invalid date format '{val}' for {field_name}, expected YYYY-MM-DD",
+                    line=line,
+                    context=node_id,
+                )
+            )
         return None
 
 
@@ -224,26 +298,64 @@ def _clean_depends(val: Any) -> list[str]:
     return [str(val)]
 
 
-def _clean_priority(val: Any) -> Optional[str]:
+def _clean_priority(
+    val: Any,
+    errors: list[ParseError],
+    node_id: str = "",
+    line: Optional[int] = None,
+) -> Optional[str]:
     """Validate and return a priority string, or ``None`` if absent/invalid.
 
     :param val: Raw value from YAML metadata.
+    :param errors: List to append parsing errors to.
+    :param node_id: Node identifier for error context.
+    :param line: Line number for error reporting.
     :returns: A member of :pydata:`VALID_PRIORITIES` or ``None``.
     """
     if val is None:
         return None
     priority: str = str(val)
-    return priority if priority in VALID_PRIORITIES else None
+    if priority not in VALID_PRIORITIES:
+        errors.append(
+            ParseError(
+                level=ParseErrorLevel.WARNING,
+                message=f"Invalid priority '{priority}', expected one of: {', '.join(VALID_PRIORITIES)}",
+                line=line,
+                context=node_id,
+            )
+        )
+        return None
+    return priority
 
 
-def _clean_status(val: Any) -> str:
+def _clean_status(
+    val: Any,
+    errors: list[ParseError],
+    node_id: str = "",
+    line: Optional[int] = None,
+) -> str:
     """Validate and return a status string, defaulting to ``"not_started"``.
 
     :param val: Raw value from YAML metadata.
+    :param errors: List to append parsing errors to.
+    :param node_id: Node identifier for error context.
+    :param line: Line number for error reporting.
     :returns: A member of :pydata:`VALID_STATUSES`.
     """
-    status: str = str(val) if val else "not_started"
-    return status if status in VALID_STATUSES else "not_started"
+    if val is None:
+        return "not_started"
+    status: str = str(val)
+    if status not in VALID_STATUSES:
+        errors.append(
+            ParseError(
+                level=ParseErrorLevel.WARNING,
+                message=f"Invalid status '{status}', expected one of: {', '.join(VALID_STATUSES)}",
+                line=line,
+                context=node_id,
+            )
+        )
+        return "not_started"
+    return status
 
 
 def _parse_tracking(data: dict[str, Any]) -> TrackingConfig:
@@ -337,7 +449,12 @@ def _parse_smart(data: dict[str, Any]) -> Optional[SmartCriteria]:
 # ── Metadata parser ─────────────────────────────────────────────────────
 
 
-def _parse_metadata(body: str) -> dict[str, Any]:
+def _parse_metadata(
+    body: str,
+    errors: list[ParseError],
+    node_id: str = "",
+    base_line: int = 0,
+) -> dict[str, Any]:
     """Parse YAML-list metadata from the text body under a heading.
 
     Lines are collected while they look like YAML (``- key: value`` or
@@ -345,6 +462,9 @@ def _parse_metadata(body: str) -> dict[str, Any]:
     collection.
 
     :param body: Raw text between two headings.
+    :param errors: List to append parsing errors to.
+    :param node_id: Node identifier for error context.
+    :param base_line: Line number offset for error reporting.
     :returns: A flat dictionary of parsed metadata fields.
     """
     yaml_lines: list[str] = []
@@ -374,7 +494,16 @@ def _parse_metadata(body: str) -> dict[str, Any]:
     yaml_text: str = "\n".join(yaml_lines)
     try:
         parsed: Any = yaml.safe_load(yaml_text)
-    except yaml.YAMLError:
+    except yaml.YAMLError as e:
+        line_num = base_line + (e.problem_mark.line + 1 if e.problem_mark else 1)
+        errors.append(
+            ParseError(
+                level=ParseErrorLevel.ERROR,
+                message=f"Invalid YAML syntax: {e.problem or 'parse error'}",
+                line=line_num,
+                context=node_id,
+            )
+        )
         return {}
 
     if isinstance(parsed, list):
@@ -399,7 +528,8 @@ def _parse_metadata(body: str) -> dict[str, Any]:
 def _parse_time_entries(
     text: str,
     default_node_id: str = "",
-) -> list[TimeEntry]:
+    base_line: int = 0,
+) -> tuple[list[TimeEntry], list[ParseError]]:
     """Parse a Markdown table of time-journal entries.
 
     Two table formats are accepted:
@@ -416,12 +546,16 @@ def _parse_time_entries(
     :param text: Raw text of the journal section.
     :param default_node_id: Node id to use when the table has no task
         column (leaf-level journal).
-    :returns: A list of :class:`TimeEntry` objects.
+    :param base_line: Line number offset for error reporting.
+    :returns: A tuple of (entries, errors).
     """
     entries: list[TimeEntry] = []
+    errors: list[ParseError] = []
     short_format: Optional[bool] = None
+    line_num: int = base_line
 
     for line in text.strip().split("\n"):
+        line_num += 1
         line = line.strip()
         if not line.startswith("|") or "---" in line:
             continue
@@ -448,10 +582,26 @@ def _parse_time_entries(
                 continue
             entry_date: Optional[date] = _parse_date(cols[0])
             if entry_date is None:
+                errors.append(
+                    ParseError(
+                        level=ParseErrorLevel.WARNING,
+                        message=f"Invalid date '{cols[0]}' in journal entry",
+                        line=line_num,
+                        context=default_node_id,
+                    )
+                )
                 continue
             quantity: Optional[float]
             quantity, _ = _extract_value_unit(cols[1])
             if quantity is None:
+                errors.append(
+                    ParseError(
+                        level=ParseErrorLevel.WARNING,
+                        message=f"Invalid value '{cols[1]}' in journal entry",
+                        line=line_num,
+                        context=default_node_id,
+                    )
+                )
                 continue
             entries.append(
                 TimeEntry(
@@ -467,9 +617,25 @@ def _parse_time_entries(
                 continue
             entry_date = _parse_date(cols[0])
             if entry_date is None:
+                errors.append(
+                    ParseError(
+                        level=ParseErrorLevel.WARNING,
+                        message=f"Invalid date '{cols[0]}' in journal entry",
+                        line=line_num,
+                        context=cols[1] if len(cols) > 1 else "",
+                    )
+                )
                 continue
             quantity, _ = _extract_value_unit(cols[2])
             if quantity is None:
+                errors.append(
+                    ParseError(
+                        level=ParseErrorLevel.WARNING,
+                        message=f"Invalid value '{cols[2]}' in journal entry",
+                        line=line_num,
+                        context=cols[1] if len(cols) > 1 else "",
+                    )
+                )
                 continue
             node_id: str = cols[1] if cols[1] else default_node_id
             entries.append(
@@ -481,7 +647,7 @@ def _parse_time_entries(
                 )
             )
 
-    return entries
+    return entries, errors
 
 
 # ── Heading splitter ─────────────────────────────────────────────────────
@@ -496,6 +662,7 @@ class _Section:
     :param node_id: Parsed identifier (empty when absent).
     :param title: Parsed title (may equal *raw_heading* when no id).
     :param body: Text between this heading and the next.
+    :param line: Line number in the source file (1-indexed).
     :param is_journal: ``True`` when this heading is a time-journal section.
     """
 
@@ -504,13 +671,15 @@ class _Section:
     node_id: str
     title: str
     body: str
+    line: int = 0
     is_journal: bool = False
 
 
-def _split_into_sections(text: str) -> list[_Section]:
+def _split_into_sections(text: str, line_offset: int = 0) -> list[_Section]:
     """Split an entire document body into a flat list of :class:`_Section`.
 
     :param text: Document body (frontmatter already stripped).
+    :param line_offset: Number of lines before the text (e.g. frontmatter).
     :returns: Ordered list of sections.
     """
     heading_re: re.Pattern[str] = re.compile(
@@ -529,6 +698,9 @@ def _split_into_sections(text: str) -> list[_Section]:
         )
         body: str = text[body_start:body_end].strip()
 
+        # Calculate line number (1-indexed)
+        line_num: int = text[: heading_match.start()].count("\n") + 1 + line_offset
+
         if raw.lower() == JOURNAL_HEADING:
             sections.append(
                 _Section(
@@ -537,6 +709,7 @@ def _split_into_sections(text: str) -> list[_Section]:
                     node_id="",
                     title="",
                     body=body,
+                    line=line_num,
                     is_journal=True,
                 )
             )
@@ -562,6 +735,7 @@ def _split_into_sections(text: str) -> list[_Section]:
                 node_id=node_id,
                 title=title,
                 body=body,
+                line=line_num,
             )
         )
 
@@ -571,11 +745,16 @@ def _split_into_sections(text: str) -> list[_Section]:
 # ── Node builder ─────────────────────────────────────────────────────────
 
 
-def _build_node(section: _Section, meta: dict[str, Any]) -> Node:
+def _build_node(
+    section: _Section,
+    meta: dict[str, Any],
+    errors: list[ParseError],
+) -> Node:
     """Construct a :class:`Node` from a section and its parsed metadata.
 
     :param section: The heading section to convert.
     :param meta: Pre-parsed YAML metadata dictionary.
+    :param errors: List to append parsing errors to.
     :returns: A new :class:`Node` (without children).
     """
     tracking: TrackingConfig = _parse_tracking(meta)
@@ -589,20 +768,40 @@ def _build_node(section: _Section, meta: dict[str, Any]) -> Node:
         if raw_end_str.endswith("!"):
             fixed_end = True
             raw_end = raw_end_str[:-1].strip()
-    end_date: Optional[date] = _parse_date(raw_end)
+    end_date: Optional[date] = _parse_date(
+        raw_end, errors, "end", section.node_id, section.line
+    )
+
+    node_type: str = str(meta.get("type", "bounded"))
+    if node_type not in ("bounded", "open"):
+        errors.append(
+            ParseError(
+                level=ParseErrorLevel.WARNING,
+                message=f"Invalid type '{node_type}', expected 'bounded' or 'open'",
+                line=section.line,
+                context=section.node_id,
+            )
+        )
+        node_type = "bounded"
 
     return Node(
         node_id=section.node_id,
         title=section.title,
-        node_type=str(meta.get("type", "bounded")),
-        status=_clean_status(meta.get("status")),
-        priority=_clean_priority(meta.get("priority")),
-        created=_parse_date(meta.get("created")),
+        node_type=node_type,
+        status=_clean_status(meta.get("status"), errors, section.node_id, section.line),
+        priority=_clean_priority(
+            meta.get("priority"), errors, section.node_id, section.line
+        ),
+        created=_parse_date(
+            meta.get("created"), errors, "created", section.node_id, section.line
+        ),
         tags=(meta.get("tags", []) if isinstance(meta.get("tags"), list) else []),
         smart=_parse_smart(meta),
         tracking=tracking,
         actual=actual,
-        start=_parse_date(meta.get("start")),
+        start=_parse_date(
+            meta.get("start"), errors, "start", section.node_id, section.line
+        ),
         end=end_date,
         fixed_end=fixed_end,
         depends_on=_clean_depends(meta.get("depends_on")),
@@ -628,6 +827,7 @@ def _build_tree(
     sections: list[_Section],
     start_idx: int,
     parent_level: int,
+    errors: list[ParseError],
     parent_node_id: str = "",
 ) -> tuple[list[Node], list[TimeEntry], int]:
     """Recursively build a tree of nodes from a flat section list.
@@ -646,6 +846,7 @@ def _build_tree(
     :param sections: Complete flat list of document sections.
     :param start_idx: Index of the first section to consider.
     :param parent_level: Heading level of the parent node.
+    :param errors: List to append parsing errors to.
     :param parent_node_id: Node id of the parent, used as default for
         leaf-level journal entries that omit the task column.
     :returns: ``(children, time_entries, next_index)`` where *next_index*
@@ -665,13 +866,27 @@ def _build_tree(
         if sec.is_journal:
             is_leaf_journal: bool = len(known_ids) == 0
             default_id: str = parent_node_id if is_leaf_journal else ""
-            raw_entries: list[TimeEntry] = _parse_time_entries(
-                sec.body, default_node_id=default_id
+            raw_entries: list[TimeEntry]
+            entry_errors: list[ParseError]
+            raw_entries, entry_errors = _parse_time_entries(
+                sec.body, default_node_id=default_id, base_line=sec.line
             )
+            errors.extend(entry_errors)
             valid_ids: set[str] = known_ids | (
                 {parent_node_id} if parent_node_id else set()
             )
-            time_entries.extend(e for e in raw_entries if e.node_id in valid_ids)
+            for e in raw_entries:
+                if e.node_id in valid_ids:
+                    time_entries.append(e)
+                else:
+                    errors.append(
+                        ParseError(
+                            level=ParseErrorLevel.WARNING,
+                            message=f"Journal entry references unknown task '{e.node_id}'",
+                            line=sec.line,
+                            context=parent_node_id,
+                        )
+                    )
             idx += 1
             continue
 
@@ -679,8 +894,10 @@ def _build_tree(
             idx += 1
             continue
 
-        meta: dict[str, Any] = _parse_metadata(sec.body)
-        node: Node = _build_node(sec, meta)
+        meta: dict[str, Any] = _parse_metadata(
+            sec.body, errors, sec.node_id, sec.line
+        )
+        node: Node = _build_node(sec, meta, errors)
         known_ids.add(node.node_id)
 
         node_children: list[Node]
@@ -689,6 +906,7 @@ def _build_tree(
             sections,
             idx + 1,
             sec.level,
+            errors,
             parent_node_id=node.node_id,
         )
         node.children = node_children
@@ -721,23 +939,55 @@ def _propagate_priority(
 # ── Main entry point ────────────────────────────────────────────────────
 
 
-def parse_goals_file(filepath: Path) -> list[Node]:
+def parse_goals_file(filepath: Path) -> ParseResult:
     """Parse a Markdown goals file into a list of top-level :class:`Node`.
 
     :param filepath: Path to the ``.md`` file.
-    :returns: Ordered list of goal nodes with fully resolved children and
-        inherited priorities.
+    :returns: A :class:`ParseResult` containing goal nodes and any errors.
     """
-    text: str = filepath.read_text(encoding="utf-8")
+    errors: list[ParseError] = []
+
+    try:
+        text: str = filepath.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        errors.append(
+            ParseError(
+                level=ParseErrorLevel.ERROR,
+                message=f"File not found: {filepath}",
+            )
+        )
+        return ParseResult(goals=[], errors=errors)
+    except PermissionError:
+        errors.append(
+            ParseError(
+                level=ParseErrorLevel.ERROR,
+                message=f"Permission denied: {filepath}",
+            )
+        )
+        return ParseResult(goals=[], errors=errors)
+    except UnicodeDecodeError as e:
+        errors.append(
+            ParseError(
+                level=ParseErrorLevel.ERROR,
+                message=f"Encoding error: {e}",
+            )
+        )
+        return ParseResult(goals=[], errors=errors)
 
     fm_match: Optional[re.Match[str]] = re.match(
         r"^---\s*\n.*?\n---\s*\n(.*)",
         text,
         re.DOTALL,
     )
-    body: str = fm_match.group(1) if fm_match else text
+    line_offset: int = 0
+    if fm_match:
+        body: str = fm_match.group(1)
+        # Count lines in frontmatter
+        line_offset = text[: fm_match.start(1)].count("\n")
+    else:
+        body = text
 
-    sections: list[_Section] = _split_into_sections(body)
+    sections: list[_Section] = _split_into_sections(body, line_offset)
 
     goals: list[Node] = []
     idx: int = 0
@@ -749,13 +999,15 @@ def parse_goals_file(filepath: Path) -> list[Node]:
             idx += 1
             continue
 
-        meta: dict[str, Any] = _parse_metadata(sec.body)
-        goal: Node = _build_node(sec, meta)
+        meta: dict[str, Any] = _parse_metadata(
+            sec.body, errors, sec.node_id, sec.line
+        )
+        goal: Node = _build_node(sec, meta, errors)
 
         goal_children: list[Node]
         time_entries: list[TimeEntry]
         goal_children, time_entries, idx = _build_tree(
-            sections, idx + 1, 2, parent_node_id=goal.node_id
+            sections, idx + 1, 2, errors, parent_node_id=goal.node_id
         )
         goal.children = goal_children
         goal.time_entries = time_entries
@@ -764,4 +1016,4 @@ def parse_goals_file(filepath: Path) -> list[Node]:
         _propagate_priority(goal)
         goals.append(goal)
 
-    return goals
+    return ParseResult(goals=goals, errors=errors)

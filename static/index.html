@@ -194,6 +194,39 @@
         .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 0.8rem; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
+        /* Error display */
+        .error-panel { background: var(--bg-card); border: 1px solid var(--accent-red); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.5rem; }
+        .error-panel.error-fatal { border-width: 2px; background: rgba(239,68,68,0.05); }
+        .error-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.8rem; }
+        .error-header h2 { font-size: 1.1rem; font-weight: 600; color: var(--accent-red); margin: 0; }
+        .error-header .error-icon { font-size: 1.2rem; color: var(--accent-red); }
+        .error-desc { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; line-height: 1.5; }
+
+        .error-banner { background: var(--bg-card); border: 1px solid var(--accent-amber); border-radius: var(--radius); margin-bottom: 1.5rem; overflow: hidden; }
+        .error-banner.has-errors { border-color: var(--accent-red); }
+        .error-banner-header { display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.2rem; cursor: pointer; transition: background 0.15s; }
+        .error-banner-header:hover { background: rgba(251,191,36,0.05); }
+        .error-banner.has-errors .error-banner-header:hover { background: rgba(239,68,68,0.05); }
+        .error-banner-summary { display: flex; align-items: center; gap: 0.6rem; }
+        .error-banner-summary .error-icon { font-size: 1rem; color: var(--accent-amber); }
+        .error-banner.has-errors .error-banner-summary .error-icon { color: var(--accent-red); }
+        .error-count { font-weight: 500; font-size: 0.85rem; }
+        .error-badge { background: rgba(239,68,68,0.15); color: var(--accent-red); font-size: 0.68rem; padding: 0.15rem 0.45rem; border-radius: 99px; }
+        .warning-badge { background: rgba(251,191,36,0.15); color: var(--accent-amber); font-size: 0.68rem; padding: 0.15rem 0.45rem; border-radius: 99px; }
+        .error-toggle-btn { background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.3rem 0.7rem; font-size: 0.75rem; color: var(--text-secondary); cursor: pointer; transition: all 0.15s; font-family: 'Outfit', sans-serif; }
+        .error-toggle-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+        .error-banner-details { max-height: 0; overflow: hidden; transition: max-height 0.3s ease-out, padding 0.3s ease-out; padding: 0 1.2rem; }
+        .error-banner-details.expanded { max-height: 600px; padding: 0 1.2rem 1.2rem; overflow-y: auto; }
+
+        .error-list { display: flex; flex-direction: column; gap: 0.5rem; }
+        .error-item { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.5rem; padding: 0.6rem 0.8rem; background: rgba(251,191,36,0.06); border-left: 3px solid var(--accent-amber); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 0.82rem; }
+        .error-item.level-error { background: rgba(239,68,68,0.06); border-left-color: var(--accent-red); }
+        .error-level-badge { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; padding: 0.1rem 0.4rem; border-radius: 99px; background: rgba(251,191,36,0.2); color: var(--accent-amber); flex-shrink: 0; }
+        .error-item.level-error .error-level-badge { background: rgba(239,68,68,0.2); color: var(--accent-red); }
+        .error-message { flex: 1; min-width: 200px; color: var(--text-primary); }
+        .error-meta { width: 100%; display: flex; gap: 1rem; margin-top: 0.2rem; font-size: 0.72rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .error-meta code { background: rgba(79,143,247,0.1); padding: 0.1rem 0.3rem; border-radius: 3px; color: var(--accent-blue); }
+
         @media (max-width: 768px) {
             .header, .content { padding-left: 1.2rem; padding-right: 1.2rem; }
             .tabs { padding: 0 1.2rem; }
@@ -228,6 +261,7 @@
         <div class="tab" data-view="predictions" id="tab-predictions">Predictions</div>
     </div>
     <div class="content">
+        <div id="error-banner" style="display:none"></div>
         <div class="view active" id="view-overview"><div class="loading"><div class="spinner"></div> ...</div></div>
         <div class="view" id="view-gantt"><div class="loading"><div class="spinner"></div> ...</div></div>
         <div class="view" id="view-predictions"><div class="loading"><div class="spinner"></div> ...</div></div>

@@ -172,17 +172,21 @@ class TestNodeToDict:
 
 
 class TestAPIEndpoints:
-    def _mock_goals(self) -> list[Node]:
-        return [
-            Node(
-                node_id="a",
-                title="Alpha",
-                status="in_progress",
-                priority="high",
-                tags=["test"],
-                tracking=TrackingConfig(target=100.0, unit="pages"),
-            ),
-        ]
+    def _mock_goals(self) -> tuple[list[Node], list]:
+        """Return mock goals with empty errors list."""
+        return (
+            [
+                Node(
+                    node_id="a",
+                    title="Alpha",
+                    status="in_progress",
+                    priority="high",
+                    tags=["test"],
+                    tracking=TrackingConfig(target=100.0, unit="pages"),
+                ),
+            ],
+            [],  # No errors
+        )
 
     def test_get_goals(self, client: TestClient) -> None:
         with patch("app.main._load_goals", return_value=self._mock_goals()):
@@ -190,9 +194,11 @@ class TestAPIEndpoints:
         assert resp.status_code == 200
         data: dict[str, Any] = resp.json()
         assert "goals" in data
+        assert "errors" in data
         assert "as_of" in data
         assert len(data["goals"]) == 1
         assert data["goals"][0]["id"] == "a"
+        assert len(data["errors"]) == 0
 
     def test_get_goal_found(self, client: TestClient) -> None:
         with patch("app.main._load_goals", return_value=self._mock_goals()):
@@ -200,6 +206,7 @@ class TestAPIEndpoints:
         assert resp.status_code == 200
         data: dict[str, Any] = resp.json()
         assert data["id"] == "a"
+        assert "errors" in data
 
     def test_get_goal_not_found(self, client: TestClient) -> None:
         with patch("app.main._load_goals", return_value=self._mock_goals()):
@@ -207,6 +214,7 @@ class TestAPIEndpoints:
         assert resp.status_code == 200
         data: dict[str, Any] = resp.json()
         assert data["error"] == "Goal not found"
+        assert "errors" in data
 
     def test_get_gantt(self, client: TestClient) -> None:
         with patch("app.main._load_goals", return_value=self._mock_goals()):
@@ -214,6 +222,7 @@ class TestAPIEndpoints:
         assert resp.status_code == 200
         data: dict[str, Any] = resp.json()
         assert "tasks" in data
+        assert "errors" in data
         assert len(data["tasks"]) >= 1
 
     def test_serve_dashboard(self, client: TestClient) -> None:

@@ -14,6 +14,17 @@ const LOCALE_EN = {
     noData: "No data.",
     loading: "Loading...",
 
+    // Parsing errors
+    parsingErrors: "Parsing errors",
+    parsingErrorsDesc: "The following issues were found while parsing the goals file. Please fix them to ensure correct behavior.",
+    errorLine: "Line",
+    errorContext: "Context",
+    errorLevelError: "Error",
+    errorLevelWarning: "Warning",
+    errorsCount: (n) => `${n} issue${n > 1 ? 's' : ''} found`,
+    showErrors: "Show details",
+    hideErrors: "Hide details",
+
     // Statuses
     status_done: "Done",
     status_in_progress: "In progress",

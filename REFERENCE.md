@@ -654,3 +654,69 @@ Sorting applies to all three views simultaneously.
 The filter bar below the title allows filtering by priority
 and by category (tags). Buttons are toggles: clicking
 enables/disables the filter. No active filter = everything visible.
+
+---
+
+## Error Handling
+
+The application explicitly displays parsing errors instead of
+silently ignoring them. This helps users identify and fix
+issues in their goals file.
+
+### Error Types
+
+| Level   | Description                                           |
+|---------|-------------------------------------------------------|
+| Error   | Fatal error preventing file parsing (file not found, encoding issue, invalid YAML syntax) |
+| Warning | Non-fatal issue that allows parsing to continue (invalid date, unknown status, unknown task reference) |
+
+### Display
+
+- **Error banner**: Displayed at the top of the dashboard when warnings
+  or errors are detected. Click to expand/collapse details.
+- **Fatal error page**: When parsing completely fails, a dedicated
+  error page is shown instead of the dashboard.
+
+### Error Information
+
+Each error includes:
+
+- **Level**: Error or Warning
+- **Message**: Description of the issue
+- **Line**: Line number in the file (when available)
+- **Context**: Relevant node identifier
+
+### Detected Issues
+
+| Issue                        | Level   | Example                          |
+|------------------------------|---------|----------------------------------|
+| File not found               | Error   | File does not exist              |
+| Permission denied            | Error   | Cannot read file                 |
+| Encoding error               | Error   | Invalid UTF-8                    |
+| Invalid YAML syntax          | Error   | `- status: [unclosed`            |
+| Invalid date format          | Warning | `start: 15-02-2026`              |
+| Invalid status               | Warning | `status: running`                |
+| Invalid priority             | Warning | `priority: urgent`               |
+| Invalid type                 | Warning | `type: infinite`                 |
+| Invalid journal date         | Warning | `| bad-date | task | 10 |`       |
+| Invalid journal value        | Warning | `| 2026-01-01 | task | abc |`    |
+| Unknown task reference       | Warning | Journal entry references undefined task |
+
+### API Response
+
+The API endpoints now include an `errors` field:
+
+```json
+{
+  "goals": [...],
+  "errors": [
+    {
+      "level": "warning",
+      "message": "Invalid status 'running', expected one of: not_started, in_progress, done, paused, cancelled",
+      "line": 15,
+      "context": "goal-01"
+    }
+  ],
+  "as_of": "2026-02-23"
+}
+```

@@ -655,3 +655,69 @@ Le tri s'applique aux trois vues simultanément.
 La barre de filtres sous le titre permet de filtrer par priorité
 et par catégorie (tags). Les boutons sont des toggles : cliquer
 active/désactive le filtre. Aucun filtre actif = tout visible.
+
+---
+
+## Gestion des erreurs
+
+L'application affiche explicitement les erreurs d'analyse au lieu
+de les ignorer silencieusement. Cela permet aux utilisateurs
+d'identifier et de corriger les problèmes dans leur fichier.
+
+### Types d'erreurs
+
+| Niveau        | Description                                           |
+|---------------|-------------------------------------------------------|
+| Erreur        | Erreur fatale empêchant l'analyse (fichier introuvable, problème d'encodage, syntaxe YAML invalide) |
+| Avertissement | Problème non fatal permettant de continuer l'analyse (date invalide, statut inconnu, référence de tâche inconnue) |
+
+### Affichage
+
+- **Bannière d'erreurs** : Affichée en haut du dashboard quand des
+  avertissements ou erreurs sont détectés. Cliquer pour développer/réduire.
+- **Page d'erreur fatale** : Quand l'analyse échoue complètement, une
+  page d'erreur dédiée remplace le dashboard.
+
+### Informations d'erreur
+
+Chaque erreur inclut :
+
+- **Niveau** : Erreur ou Avertissement
+- **Message** : Description du problème
+- **Ligne** : Numéro de ligne dans le fichier (si disponible)
+- **Contexte** : Identifiant du nœud concerné
+
+### Problèmes détectés
+
+| Problème                     | Niveau        | Exemple                          |
+|------------------------------|---------------|----------------------------------|
+| Fichier introuvable          | Erreur        | Le fichier n'existe pas          |
+| Permission refusée           | Erreur        | Impossible de lire le fichier    |
+| Erreur d'encodage            | Erreur        | UTF-8 invalide                   |
+| Syntaxe YAML invalide        | Erreur        | `- status: [unclosed`            |
+| Format de date invalide      | Avertissement | `start: 15-02-2026`              |
+| Statut invalide              | Avertissement | `status: running`                |
+| Priorité invalide            | Avertissement | `priority: urgent`               |
+| Type invalide                | Avertissement | `type: infinite`                 |
+| Date de journal invalide     | Avertissement | `| bad-date | task | 10 |`       |
+| Valeur de journal invalide   | Avertissement | `| 2026-01-01 | task | abc |`    |
+| Référence de tâche inconnue  | Avertissement | Entrée de journal référençant une tâche non définie |
+
+### Réponse API
+
+Les endpoints API incluent maintenant un champ `errors` :
+
+```json
+{
+  "goals": [...],
+  "errors": [
+    {
+      "level": "warning",
+      "message": "Invalid status 'running', expected one of: not_started, in_progress, done, paused, cancelled",
+      "line": 15,
+      "context": "goal-01"
+    }
+  ],
+  "as_of": "2026-02-23"
+}
+```

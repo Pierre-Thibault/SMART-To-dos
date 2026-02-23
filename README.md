@@ -31,6 +31,7 @@ Depth is unlimited, but in practice 1 to 3 levels are sufficient.
 - **Filters**: by priority and by category (tags)
 - **Light/dark theme** automatic based on system preferences
 - **Web dashboard**: Overview, Gantt, Predictions
+- **Error handling**: explicit display of syntax issues with line numbers
 
 ## Installation
 

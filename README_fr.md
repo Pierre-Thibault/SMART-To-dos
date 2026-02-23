@@ -31,6 +31,7 @@ La profondeur est illimitée, mais en pratique 1 à 3 niveaux suffisent.
 - **Filtres** : par priorité et par catégorie (tags)
 - **Thème clair/sombre** automatique selon les préférences système
 - **Dashboard web** : Vue d'ensemble, Gantt, Prédictions
+- **Gestion des erreurs** : affichage explicite des problèmes de syntaxe avec numéros de ligne
 
 ## Installation
 
