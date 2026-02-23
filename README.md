@@ -1,46 +1,46 @@
 # SMART Goals Tracker
 
-Système de suivi d'objectifs avec dashboard web, diagramme de Gantt et prédictions.
-Tout dans un seul fichier Markdown, éditable dans n'importe quel éditeur de texte.
+Goal tracking system with web dashboard, Gantt chart and predictions.
+Everything in a single Markdown file, editable in any text editor.
 
-## Principe
+## Concept
 
-Le système repose sur un modèle récursif unifié. Chaque élément (objectif,
-sous-objectif, sous-tâche) suit la même logique :
+The system relies on a unified recursive model. Each element (goal,
+sub-goal, sub-task) follows the same logic:
 
-- **Avec enfants** → progression calculée à partir de ses enfants
-- **Sans enfants** → progression suivie via son propre tracking et le journal
+- **With children** → progress calculated from its children
+- **Without children** → progress tracked via its own tracking and journal
 
-La profondeur est illimitée, mais en pratique 1 à 3 niveaux suffisent.
+Depth is unlimited, but in practice 1 to 3 levels are sufficient.
 
-## Fonctionnalités
+## Features
 
-- **Un seul fichier** `objectifs.md`
-- **Arbre récursif** : profondeur illimitée, même logique à chaque niveau
-- **SMART optionnel** sur n'importe quel élément
-- **Deux modes de suivi** : cumulatif (somme) et performance (maximum)
-- **Dates fixes** : progression temporelle automatique (`end: YYYY-MM-DD!`)
-- **Unités libres** : pages, heures, minutes, %, km, chapitres...
-- **Priorités** : optional, low, medium, high, capital (héritées du parent)
-- **Dépendances multiples** entre éléments du même niveau
-- **Prédictions dès 2 entrées** dans le journal
-- **Progression pondérée** par cible pour unités homogènes
-- **Statut auto-dérivé** : parents depuis enfants, feuilles depuis entrées
-- **Objectifs ouverts** (`type: open`) exclus du calcul parent
-- **Tri** : ordre du fichier, par nom, par priorité et nom
-- **Filtres** : par priorité et par catégorie (tags)
-- **Thème clair/sombre** automatique selon les préférences système
-- **Dashboard web** : Vue d'ensemble, Gantt, Prédictions
+- **Single file** `objectifs.md`
+- **Recursive tree**: unlimited depth, same logic at each level
+- **Optional SMART** on any element
+- **Two tracking modes**: cumulative (sum) and performance (maximum)
+- **Fixed dates**: automatic time-based progress (`end: YYYY-MM-DD!`)
+- **Free-form units**: pages, hours, minutes, %, km, chapters...
+- **Priorities**: optional, low, medium, high, capital (inherited from parent)
+- **Multiple dependencies** between elements at the same level
+- **Predictions from 2 entries** in the journal
+- **Weighted progress** by target for homogeneous units
+- **Auto-derived status**: parents from children, leaves from entries
+- **Open goals** (`type: open`) excluded from parent calculation
+- **Sorting**: file order, by name, by priority and name
+- **Filters**: by priority and by category (tags)
+- **Light/dark theme** automatic based on system preferences
+- **Web dashboard**: Overview, Gantt, Predictions
 
 ## Installation
 
-### Avec Nix
+### With Nix
 
 ```bash
 nix develop
 ```
 
-### Sans Nix
+### Without Nix
 
 ```bash
 pip install -r requirements.txt --break-system-packages
@@ -48,65 +48,65 @@ pip install -r requirements.txt --break-system-packages
 
 ## Configuration
 
-Copier le fichier de préférences et l'adapter :
+Copy the preferences file and customize it:
 
 ```bash
 cp src/preferences_template.py src/preferences.py
 ```
 
-Modifier `src/preferences.py` :
+Edit `src/preferences.py`:
 
 ```python
-GOALS_FILE = "/chemin/vers/mon/objectifs.md"
+GOALS_FILE = "/path/to/my/objectifs.md"
 ```
 
-Ce fichier est ignoré par git.
+This file is ignored by git.
 
-## Utilisation
+## Usage
 
 ```bash
 PYTHONPATH=src uvicorn app.main:app --reload
 ```
 
-Avec Nix, le `PYTHONPATH` est configuré automatiquement :
+With Nix, `PYTHONPATH` is configured automatically:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Ouvrir http://localhost:8000.
+Open http://localhost:8000.
 
-Sans `preferences.py`, l'application utilise `./sample_vault/objectifs.md`.
+Without `preferences.py`, the application uses `./sample_vault/objectifs.md`.
 
 ## Tests
 
-Lancer la suite de tests :
+Run the test suite:
 
 ```bash
 PYTHONPATH=src python -m pytest tests/ -v
 ```
 
-Avec couverture :
+With coverage:
 
 ```bash
 PYTHONPATH=src python -m pytest tests/ --cov=app --cov-report=term-missing
 ```
 
-Les tests couvrent :
+Tests cover:
 
-- **parser.py** : extraction valeur/unité, dates, métadonnées YAML,
-  journal de temps, découpage en sections, construction d'arbre,
-  héritage de priorité, intégration complète.
-- **analytics.py** : valeur courante, vélocité, prédiction, pourcentage
-  feuille, poids de sous-arbre, unités, progression pondérée/prédite,
-  dérivation de statut, objectifs ouverts, dates fixes, on-track.
-- **main.py** : sérialisation JSON, endpoints API (`/api/goals`,
-  `/api/goals/{id}`, `/api/gantt`), dashboard HTML.
+- **parser.py**: value/unit extraction, dates, YAML metadata,
+  time journal, section splitting, tree construction,
+  priority inheritance, full integration.
+- **analytics.py**: current value, velocity, prediction, leaf percentage,
+  subtree weight, units, weighted/predicted progress,
+  status derivation, open goals, fixed dates, on-track.
+- **main.py**: JSON serialization, API endpoints (`/api/goals`,
+  `/api/goals/{id}`, `/api/gantt`), HTML dashboard.
 
 ## Documentation
 
-Voir [REFERENCE.md](REFERENCE.md) pour la structure complète du fichier
-et toutes les valeurs possibles.
+See [REFERENCE.md](REFERENCE.md) for the complete file structure
+and all possible values.
 
 ## Architecture
 
@@ -115,23 +115,23 @@ smart-goals/
 ├── src/
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── parser.py              # Parse le fichier Markdown (récursif)
-│   │   ├── analytics.py           # Progression, vélocité, prédictions
-│   │   └── main.py                # API FastAPI
-│   └── preferences_template.py    # Template de configuration
+│   │   ├── parser.py              # Parses the Markdown file (recursive)
+│   │   ├── analytics.py           # Progress, velocity, predictions
+│   │   └── main.py                # FastAPI API
+│   └── preferences_template.py    # Configuration template
 ├── tests/
-│   ├── conftest.py                # Fixtures partagées
-│   ├── test_parser.py             # Tests du parser
-│   ├── test_analytics.py          # Tests de l'analytique
-│   ├── test_main.py               # Tests de l'API
-│   └── test_edge_cases.py         # Cas limites
+│   ├── conftest.py                # Shared fixtures
+│   ├── test_parser.py             # Parser tests
+│   ├── test_analytics.py          # Analytics tests
+│   ├── test_main.py               # API tests
+│   └── test_edge_cases.py         # Edge cases
 ├── static/
-│   ├── index.html                 # Structure HTML
-│   ├── theme-light.css            # Thème clair
-│   ├── theme-dark.css             # Thème sombre
-│   └── app.js                     # Logique du dashboard
+│   ├── index.html                 # HTML structure
+│   ├── theme-light.css            # Light theme
+│   ├── theme-dark.css             # Dark theme
+│   └── app.js                     # Dashboard logic
 ├── sample_vault/
-│   └── objectifs.md               # Exemple avec 3 objectifs
+│   └── objectifs.md               # Example with 3 goals
 ├── .gitignore
 ├── flake.nix
 ├── requirements.txt
@@ -139,7 +139,7 @@ smart-goals/
 └── README.md
 ```
 
-## Licence
+## License
 
 MIT License
 
