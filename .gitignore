@@ -1,0 +1,6 @@
+src/preferences.py
+__pycache__/
+*.pyc
+.venv/
+
+.aider.*
